@@ -43,7 +43,7 @@ def list_volume():
             if len(files) > 10:
                 print(f"{indent}  ... and {len(files) - 10} more files")
 
-    # Specifically search for flame2023.pkl
+    # Specifically search for flame2023.pkl and validate it
     print(f"\n{'=' * 80}")
     print("Searching for flame2023.pkl...")
     print("=" * 80)
@@ -53,7 +53,25 @@ def list_volume():
         capture_output=True, text=True, timeout=30,
     )
     if result.stdout.strip():
-        print(result.stdout.strip())
+        for pkl_path in result.stdout.strip().split("\n"):
+            size = os.path.getsize(pkl_path)
+            size_mb = size / (1024 * 1024)
+            print(f"  Found: {pkl_path} ({size_mb:.2f} MB)")
+            if size < 1024:
+                try:
+                    with open(pkl_path, "r") as f:
+                        head = f.read(64)
+                    if head.startswith("version https://git-lfs"):
+                        print(f"    INVALID: This is a Git LFS pointer, not real binary data!")
+                        print(f"    Content: {head[:80]}")
+                    else:
+                        print(f"    WARNING: File is very small ({size} bytes)")
+                except UnicodeDecodeError:
+                    print(f"    Binary file, but very small ({size} bytes)")
+            else:
+                with open(pkl_path, "rb") as f:
+                    magic = f.read(2)
+                print(f"    Binary header: {magic.hex()} (pickle OK)" if magic[0] == 0x80 else f"    Binary header: {magic.hex()}")
     else:
         print("  NOT FOUND anywhere on volume!")
 

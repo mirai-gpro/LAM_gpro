@@ -41,6 +41,20 @@ def setup():
     os.makedirs(lam_root, exist_ok=True)
     os.chdir(lam_root)
 
+    def _is_lfs_pointer(filepath):
+        """Check if file is a Git LFS pointer instead of real binary data."""
+        if not os.path.isfile(filepath):
+            return False
+        size = os.path.getsize(filepath)
+        if size > 1024:
+            return False
+        try:
+            with open(filepath, "r") as f:
+                first_line = f.readline()
+            return first_line.startswith("version https://git-lfs")
+        except (UnicodeDecodeError, OSError):
+            return False
+
     print("=" * 80)
     print("LAM Volume Setup — replicating official launch_pretrained()")
     print(f"Working directory: {lam_root}")
@@ -77,7 +91,16 @@ def setup():
         os.path.join(lam_root, "pretrained_models", "human_model_files", "flame_assets", "flame", "flame2023.pkl"),
         os.path.join(lam_root, "model_zoo", "human_parametric_models", "flame_assets", "flame", "flame2023.pkl"),
     ]
-    found_flame = any(os.path.isfile(c) for c in flame2023_candidates)
+    found_flame = False
+    for c in flame2023_candidates:
+        if os.path.isfile(c):
+            if _is_lfs_pointer(c):
+                size = os.path.getsize(c)
+                print(f"\n[2/5] WARNING: {c} is a Git LFS pointer ({size} bytes), not real data. Deleting...")
+                os.remove(c)
+            else:
+                found_flame = True
+                break
 
     if found_flame:
         print("\n[2/5] Human model files (flame2023.pkl): already present, skipping.")
@@ -111,6 +134,11 @@ def setup():
     # Also check official path
     official_weights_dir = os.path.join(lam_root, "exps", "releases", "lam", "lam-20k", "step_045500")
     official_safetensors = os.path.join(official_weights_dir, "model.safetensors")
+
+    for sf in [weights_safetensors, official_safetensors]:
+        if os.path.isfile(sf) and _is_lfs_pointer(sf):
+            print(f"\n[3/5] WARNING: {sf} is a Git LFS pointer. Deleting...")
+            os.remove(sf)
 
     if os.path.isfile(weights_safetensors) or os.path.isfile(official_safetensors):
         print("\n[3/5] LAM-20K weights: already present, skipping.")
@@ -248,6 +276,10 @@ def setup():
                 if os.path.isfile(full):
                     size_mb = os.path.getsize(full) / (1024 * 1024)
                     size_info = f" ({size_mb:.1f} MB)"
+                    if _is_lfs_pointer(full):
+                        print(f"  CORRUPT (LFS pointer): {name} -> {p}{size_info}")
+                        all_ok = False
+                        break
                 print(f"  OK: {name} -> {p}{size_info}")
                 found = True
                 break
